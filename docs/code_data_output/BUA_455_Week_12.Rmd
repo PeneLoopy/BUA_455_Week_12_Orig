@@ -1,0 +1,410 @@
+---
+title: "BUA_455_Week_12"
+author: "Penelope Pooler Eisenbies"
+date: "2022-11-15"
+output: 
+  html_document: 
+    code_folding: hide
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+---
+
+```{r setup, include=TRUE}
+
+# this line specifies options for default options for all R Chunks
+knitr::opts_chunk$set(echo=T, 
+                      highlight=T)
+
+# suppress scientific notation
+options(scipen=100,
+        getSymbols.warning4.0 = FALSE)
+
+# install helper package (pacman), if needed
+if (!require("pacman")) install.packages("pacman", repos = "http://lib.stat.cmu.edu/R/CRAN/")
+
+# install and load required packages
+# pacman should be first package in parentheses and then list others
+pacman::p_load(pacman,tidyverse, ggthemes, magrittr, knitr, lubridate, gridExtra, RColorBrewer, 
+               flexdashboard, maps, usdata, countrycode, mapproj, shadowtext, plotly)
+
+# verify packages (comment out in finished documents)
+p_loaded()
+
+```
+
+---
+
+### Updates
+
+- HW 2 - Part 5 is due Friday, 11/18.  
+
+  - For Question 9, you should document steps to update Panel 6.
+  
+  - Data for this panel were updated this week:
+  
+    - [Netflix Quarterly Revenue (requires SU login)](https://www-statista-com.libezproxy2.syr.edu/statistics/273883/netflixs-quarterly-revenue/)
+    - [Netflix Quarterly Net Income (requires SU login)](https://www-statista-com.libezproxy2.syr.edu/statistics/273884/netflixs-quarterly-net-income/)
+
+  - There is a grace period (over break), but you should be able to finish it before then.
+  
+---
+
+### More Uppdates
+
+- Quiz 2 grading is progressing
+
+- Proposal Feedback will be posted this week.
+
+  - Note: One group has asked to ammend their proposal and I agreed.  If your group is considering a switch, this would be the last week that it would be feasible.
+  
+- If you have data management questions, get in touch with me or a TA ASAP
+  
+  - Plan out tasks and how to accomplish them.  
+  
+  - We are here to help with tasks where you might be stymied, but don't wait until the last day.
+  
+- Presentations will be on 12/6 and 12/8.  
+
+  - All students are required to attend and provide feedback.
+
+---
+
+### Plan for this Week
+
+- More examples and skills to manage and curate geographic data
+
+  - Today - World Data
+  
+  - Thursday - State data, Filtering to a Region, Publisng work
+
+- More tips for good project management
+
+- Posting HTML files for free using **[Rpubs](https://plotly.com/ggplot2/geom_polygon/)** 
+
+  - Useful for presenting dashboard
+  
+---
+
+### Importing and Joining World Datasets
+
+#### World Data 
+
+```{r world data prep}
+
+world <- map_data("world") |> select(!subregion)                              # world geo info
+intbxo <- read_csv("intl_bxo.csv", show_col_types = F, skip=6) |>             # import/tidy bxo
+  select(1,6) |>
+  rename("region" = "Area", "wknd_gross" = "Weekend Gross") |>
+  filter(!is.na(wknd_gross)) |>
+  mutate(wknd_gross = gsub("$", "", wknd_gross, fixed = T),
+         wknd_gross = gsub(",", "", wknd_gross, fixed = T) |> as.numeric())
+
+world_bxo_data <- left_join(intbxo, world) |>                                # join datasets
+  filter(!is.na(wknd_gross))
+world_bxo_data$continent = countrycode(sourcevar = world_bxo_data$region,    # retrieve continents
+                                       origin = "country.name",
+                                       destination = "continent")  
+head(world_bxo_data, 3)
+
+```
+  
+---
+
+### Choropleth Country Plot w/ Labels
+
+#### Example - Asia
+
+- **Most** of the plot code that follows is review
+
+  - There are a few new details:
+    
+    - `shadowtext` labels (see below)
+    
+    - modifying size of text elements (mentioned but not emphasized)
+
+- **NOTES:** 
+
+  - The R package `shadowtext` includes the command `geom_shadowtext`
+
+  - `shadowtext` is useful for creating visible labels for all countries regardless of color
+
+  - Deciding on units ($1000) and transformation (`log`) took some trial and error.
+  
+---
+  
+### Managing Data for Asia Chropleth Map
+
+#### This R code creates the Asia Map dataset
+
+```{r asia data for map}
+
+asia_bxo_data <- world_bxo_data |>           # create asia box office dataset 
+  filter(continent=="Asia") |>
+  mutate(Gross = as.integer(wknd_gross), 
+         wknd_gross = wknd_gross/1000) 
+
+asia_nms <- asia_bxo_data |>                         # create dataset of country names 
+  select(region, long, lat, group, continent) |>     # median lat and long used for position
+  group_by(continent, region) |>
+  summarize(nm_x=median(long, na.rm=T),
+            nm_y=median(lat, na.rm=T)) |>
+  filter(!is.na(nm_x) | !is.na(nm_y))
+
+asia_bxo_data <- inner_join(asia_bxo_data, asia_nms) # merge datasets using an inner_join
+
+```
+
+---
+
+### Asia Static Map with Log Transformation
+
+```{r asia static map code}
+
+(asia_bxo_map <- asia_bxo_data |>    # Creates the map that follows
+   ggplot(aes(x=long, y=lat,
+              group=group,
+              fill=wknd_gross)) +
+   geom_polygon() +
+   theme_map() +
+   coord_map("albers", lat0 = 39, lat1 = 45) +
+   labs(fill= "Gross ($1K)",
+        title="Weekend Gross ($ Thousands) in Asian Countries",
+        subtitle="Weekend Ending 11/14/2022 - Data are Log-transformed",
+        caption="Data Source: https://www.boxofficemojo.com") +
+    
+   scale_fill_continuous(type = "viridis",  trans="log",
+                         breaks =c(1,10,100,1000,10000)) +
+   geom_shadowtext(aes(x=nm_x, y=nm_y,label=region),
+                   color="white",check_overlap = T,
+                   show.legend = F, size=4) + 
+                   
+   theme(plot.title = element_text(size = 20),
+         plot.subtitle = element_text(size = 15),
+         plot.caption = element_text(size = 10),
+         legend.text = element_text(size = 12),
+         legend.title = element_text(size = 15),
+         plot.background = element_rect(colour = "darkgrey", fill=NA, size=2)))
+
+```
+
+
+---
+
+### Asia Interactive Map with Log Transformation
+
+Map projection appears incorrect
+
+```{r asia interactive map, warning=FALSE, message=FALSE}
+
+asia_bxo_map_intr <- asia_bxo_data |>
+   ggplot(aes(x=long, y=lat, group=group)) +
+   geom_polygon(aes(fill=Gross)) +
+   geom_line(aes(text=region, color=Gross), show.legend=F, alpha = 0.01) +  # used for interactive labels
+   theme_map() +
+   coord_map("albers", lat0 = 39, lat1 = 45) +
+   labs(fill= "Gross", color="",
+        title="Asian Countries - Weekend Gross - Weekend Ending 11/14/22"
+        ) +
+   scale_fill_continuous(type = "viridis",  trans="log",
+                         breaks =c(1,10,100,1000,10000, 100000, 1000000),
+                         labels=c("1", "10", "100", "1K", "10K", "100K", "1M")) +
+   theme(plot.title = element_text(size = 15),
+         legend.text = element_text(size = 10),
+         legend.title = element_text(size = 10),
+         legend.background = element_rect(colour = "lightgrey", fill=NA, size=0.5),
+         panel.border = element_rect(colour = "lightgrey", fill=NA, size=2))
+
+(asia_intr_map <- ggplotly(asia_bxo_map_intr, 
+                           tooltip = c("text","color")))
+
+```
+
+---
+
+
+### Lecture 19 In-class Exercise
+
+- If you project includes data that can be mapped, this exercise will be helpful
+
+- Details like text size, `shadowtext`, and data transformations can all greatly improve data clarity.
+
+- You can choose to create a static map with shadow text or an interactive map
+
+  - If you create static map, submit the .png file
+  
+  - If you create an interactive map, take screenshot with an interactive label showing
+
+---
+
+### Europe Box Office Map
+
+- Copy and paste R code from previous chunks
+
+- Convert it to create dataset for Europe map and one of the maps shown.
+
+- This requires going through code line by line and making the following changes:
+
+  - change `asia` to `euro`
+  
+  - change "Asia" to "Europe"
+  
+  - In static map, country labels in map may need to be slightly smaller (size=3)
+  
+---
+  
+    
+### Europe Map Data
+
+Creates data for Europe Map
+
+```{r europe data for map}
+
+euro_bxo_data <- world_bxo_data |>           # create europe box office dataset 
+  filter(continent=="Europe" & region != "Russia") |>
+  mutate(Gross = as.integer(wknd_gross), 
+         wknd_gross = wknd_gross/1000) 
+
+euro_nms <- euro_bxo_data |>                         # create dataset of country names 
+  select(region, long, lat, group, continent) |>     # median lat and long used for position
+  group_by(continent, region) |>
+  summarize(nm_x=median(long, na.rm=T),
+            nm_y=median(lat, na.rm=T)) |>
+  filter(!is.na(nm_x) | !is.na(nm_y))
+
+euro_bxo_data <- inner_join(euro_bxo_data, euro_nms) # merge datasets using an inner_join
+
+```
+
+---
+
+### Europe Static Map with Log (LN) Transformation
+
+Student will create this map or interactive one by adapting Asia Map code
+
+```{r europe static map}
+
+# copy, paste, and modify asia static map code in this chunk
+
+
+```
+
+---
+
+### European Interactive Map with Log (LN) Transformation
+
+Students will create this map or static one by adapting Asia Map code (projection is not correct).
+
+```{r euro interactive map, warning=FALSE, message=FALSE}
+
+# copy, paste, and modify asia interactive map code in this chunk
+
+```
+
+
+---
+
+### Managing Projects 
+  
+- At this point, much of this should be review
+
+- After break, I will spend a little time walking you through a consulting project
+
+  - Project involved segmenting and rejoining data in multiple ways
+  
+  - Client asked for additional analyses months later
+
+- Documentation is key
+
+  - Take good notes and keep README file updated
+
+- I use a Markdown files for everything, even work I don't present to client.
+  
+  - Ideal format for wiring notes between code
+  
+---
+
+### What Goes where in a BUA 455 R Projects
+  
+#### **code_data_output folder** should have: 
+  
+  - All raw .csv files needed
+
+  - ***NO data management should be done in Excel.***
+  
+  - Any .png or other graphics files needed
+  
+  - Dashboard .rmd file (R Markdown file)
+
+  - Dashboard .html file (Dashboard presentation)
+  
+  - NOTE: As you progress in data management, code, data, and output may be in separate folders
+    
+    - requires specifying folder and file name
+    
+---
+
+### What Goes where in a BUA 455 R Projects
+
+#### **outer folder** should have
+
+  - code_data_output folder (see above)
+
+  - Complete and accurate README.txt file
+
+  - .Rproj file that is functional 
+
+- Other files can be stored in project **outer** file if needed
+
+- If other files are stored in this outer folder they must be catalogued in the README file
+
+---
+
+### Publishing Work on Rpubs
+
+#### **RPubs**
+
+- If you want to publish your dashboard or any HTML file you create in R, you can do so for free.  
+
+- R has a public online repository called [RPubs](https://rpubs.com/).  
+
+- I am not requiring students to use it for their projects, but it is useful if you want post something online and provide the link to it.
+
+- This is particularly useful if your dashboard is large and slow to knit
+
+  - Being able to post the link instead of the .html file saves time
+
+- As an in class exercise on Thursday, I will ask you each to create an account and publish your HW 5 - Part 1 dashboard html file 
+
+  - This will be useful to experiment with
+  
+    - You can see how publishing changes the appearance of your panels and text.
+  
+    - In previous semesters, some students have saved their final dashboard online and linked it to their resumes and LinkedIn profiles.
+    
+---
+
+
+### **Key Points from Week 12**
+  
+- **HW 2 - Part 2**
+
+  - Due Friday, 11/18/22
+    
+- **More with Geographic Data**
+
+   - Adding Shadow Text
+   - Introduction to Interactive Maps
+   - Projection Needs more tinkering
+
+- **Project Management**
+
+   - skills emphasized throughout course
+   - managing course project this way is beneficial
+   
+- **Publishing Work on RPubs**
+
+   - Useful for publishing and linking to work
+    
+
+**You may submit an 'Engagement Question or Comment' about Week 12 lectures until Thursday, 11/17, at midnight on Blackboard.**
