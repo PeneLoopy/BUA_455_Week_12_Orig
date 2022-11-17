@@ -768,7 +768,7 @@ Interactive State Map (draft format)
 
 ggplotly removes projection and other map elements
 
-```{r us state interactive map, echo=F, fig.dim=c(10,7), fig.align='center'}
+```{r us state interactive map, echo=F, fig.dim=c(12,7), fig.align='center'}
 
 st_lpop_int
 
