@@ -764,7 +764,7 @@ st_lpop_int <- ggplotly(st_lpop_int,
 
 ---
 
-Interactive State Map (draft format)
+### Interactive State Map (draft format)
 
 ggplotly removes projection and other map elements
 
@@ -839,6 +839,8 @@ par(mfrow=c(1,1))
 
 ---
 
+<br>
+
 #### Week 12 In-class Exercises
   
 ***TurningPoint Session ID: bua455s22***
@@ -847,6 +849,8 @@ par(mfrow=c(1,1))
   
 What exploratory plot command (base R code shown) is good for checking if the variable you want to plot is right skewed and might need to be log transformed?
 
+
+<br>
 
 #### TP Question 2 (L20)
   
@@ -927,7 +931,7 @@ ne_edu_pct <- edu_NE_map |>
 
 ---
 
-### Displaying Population and Percentage with Bachelors Degree side by side
+### Population and Percentage with Bachelor's Degrees Side by Side
 
 ```{r display of NE pop and pct maps, fig.dim=c(15,7), fig.align='center', echo=FALSE}
 
