@@ -26,7 +26,7 @@ if (!require("pacman")) install.packages("pacman", repos = "http://lib.stat.cmu.
 # install and load required packages
 # pacman should be first package in parentheses and then list others
 pacman::p_load(pacman,tidyverse, ggthemes, magrittr, knitr, lubridate, gridExtra, RColorBrewer, 
-               flexdashboard, maps, usdata, countrycode, mapproj, shadowtext, plotly)
+               flexdashboard, maps, usdata, countrycode, mapproj, shadowtext, plotly, grid)
 
 # verify packages (comment out in finished documents)
 p_loaded()
@@ -50,7 +50,7 @@ p_loaded()
   
 ---
 
-### More Uppdates
+### More Updates
 
 - Quiz 2 grading is progressing
 
@@ -80,7 +80,7 @@ p_loaded()
 
 - More tips for good project management
 
-- Posting HTML files for free using **[Rpubs](https://plotly.com/ggplot2/geom_polygon/)** 
+- Posting HTML files for free using **[Rpubs](https://rpubs.com/)** 
 
   - Useful for presenting dashboard
   
@@ -360,9 +360,401 @@ Students will create this map or static one by adapting Asia Map code (projectio
 
 ---
 
-### Publishing Work on Rpubs
+### Thursday 11/17 -  New Material Begins Here
 
-#### **RPubs**
+#### One more Set of Geographic Data Examples
+
+- Student Questions Indicate there is interest in this material.
+
+- Provides review of previous data management skills along with new data viz skills
+
+- Today's examples can be applied to state data or to country data 
+
+  - still unsure of world projections but can do more research
+  
+- Examples of Data that can be plotted by state
+
+  - Average costs and expenditures by state of specific goods or services
+
+  - Demographic data
+
+  - Voting and tex information
+
+  - Sports/Arts/Entertainment/Education investments and expenditures
+  
+- Today's examples will also show a map of data filtered by region
+
+---
+
+### US State Map Data
+  
+```{r combine state polygons with state population data from R}
+
+us_states <- map_data("state") |>          # state polygons (from R)
+  select(long:region) |>
+  rename("state" = "region")
+
+state_abbr <- state_stats |>               # many useful variables in this dataset
+  select(state, abbr) |>
+  mutate(state = tolower(state))
+
+state_pop <- county_2019 |>               # data by county (aggregated by state)
+  select(state, pop) |>
+  mutate(state=tolower(state),
+         popM = pop/1000000) |>
+  group_by(state) |>
+  summarize(st_popM = sum(popM, na.rm=T)) |>
+  full_join(state_abbr)
+
+statepop_map <- left_join(us_states, state_pop) # used left join to filter to lower 48 states
+                                                # lat/long not available for Hi and AK
+
+```
+
+---
+
+### Adding State Midpoint (centroid) Lat and Long
+  
+- On Tuesday, country labels were added to the static map using each polygon's (country)  median latitude and longitude 
+  
+- Medians don't work well for U.S. because many states are oddly shaped and small.
+
+- Alternative: [use centroid for each state polygon](https://www.latlong.net/category/states-236-14.html)
+
+  - Centroid is another term for midpoint
+
+  - Saved data as .csv file named `state_coords.csv` (included)
+   
+     - Data did not include D.C. but those coordinates were found elsewhere
+
+     - Added `state_coords` to `state_match` to verify agreement and added DC there.
+
+     - New dataset created: `state_match_check`
+
+- Final dataset for plot created: `state2019pop_map`
+
+---
+
+### Code for Addings State Midpoints (centroids) to data
+
+```{r add lat and long of state midpoints (centroid)}
+
+state_coords <- read_csv("state_coords.csv", show_col_types = F,
+                         col_names = c("state", "m_lat", "m_long")) |>
+  mutate(state = gsub(", USA", "", state, fixed=T),
+         state = gsub(", the USA", "", state, fixed=T),
+         state = gsub(", the US", "", state, fixed=T),
+         state = tolower(state))
+
+state <- "district of columbia"        # save values for dc
+m_lat <- 38.9072
+m_long <- -77.0369
+dc <- tibble(state, m_lat, m_long)     # create dataset of dc data ( 1 obs)
+state_coords <- bind_rows(state_coords, dc) # add dc to state_coords
+
+rm(dc, state, m_lat, m_long)           # remove temporary values from global
+statepop_map <- left_join(statepop_map, state_coords) # centroids to data
+
+```
+
+---
+
+### State Population Plot
+  
+- Similar to plots from Tuesday with a few changes
+
+  - Added borders to states by adding `color="darkgrey"` to `geom_polygon` command.
+
+  - Used State abbreviations for state labels.
+
+  -  Made State text labels smaller (Size = 2)
+
+  - Changed breaks for log scaled population legend
+
+- These details seem minor but they take time and trial and error.
+
+---
+
+### R Code for US State Pop. Map (without transformation)
+
+```{r code for us states pop map no transformation}
+
+st_pop <- statepop_map |>
+    ggplot(aes(x=long, y=lat, group=group, fill=st_popM)) +
+    geom_polygon(color="darkgrey") +
+    theme_map() +
+    coord_map("albers", lat0 = 39, lat1 = 45) +
+    scale_fill_continuous(type = "viridis")+
+    theme(legend.position = "bottom",
+          legend.key.width = unit(1, "cm"),
+          plot.background = element_rect(colour = "darkgrey", fill=NA, size=2)) +
+    geom_shadowtext(aes(x=m_long, y=m_lat, label=abbr),
+                    color="white", check_overlap = T,
+                    show.legend = F, size=2) + 
+    labs(fill= "Pop. in Millions", title="Population by State",
+         subtitle="Unit is 1 Million People",
+         caption= "Not Shown: HI: 1.42 Million   AK: 0.74 Million
+         Data Source: https://CRAN.R-project.org/package=usdata")  
+  
+  
+
+```
+
+---
+
+### US State Pop. Map (without transformation)
+
+```{r us states pop map no transformation, fig.dim=c(15,7), fig.align='center'}
+
+st_pop
+
+```
+
+---
+
+### R Code for US State Pop. Map (with log transformation)
+
+```{r code for us states pop map with log transformation}
+
+st_lpop <- statepop_map |>
+    ggplot(aes(x=long, y=lat, group=group, fill=st_popM)) +
+    geom_polygon(color="darkgrey") +
+    theme_map() +
+    coord_map("albers", lat0 = 39, lat1 = 45) +
+    scale_fill_continuous(type = "viridis", trans="log",
+                          breaks=c(0,1,2,3,5,10,20,35)) +
+    theme(legend.position = "bottom",
+          legend.key.width = unit(1, "cm"),
+          plot.background = element_rect(colour = "darkgrey", fill=NA, size=2)) +
+    geom_shadowtext(aes(x=m_long, y=m_lat, label=abbr),
+                    color="white", check_overlap = T,
+                    show.legend = F, size=2) + 
+    labs(fill= "Pop. in Millions", title="Population by State",
+         subtitle="Unit is 1 Million People - Log Transformed",
+         caption= "Not Shown: HI: 1.42 Million   AK: 0.74 Million
+         Data Source: https://CRAN.R-project.org/package=usdata")
+
+```
+
+---
+
+### US State Pop. Map (with log transformation)
+
+```{r us states pop map log transformation, fig.dim=c(15,7), fig.align='center'}
+
+st_lpop
+
+```
+
+---
+
+### R Code for Interactive US State Pop. Map (with log transformation)
+
+```{r code for us interactive map with log transformation}
+
+statepop_map <- statepop_map  |>
+    mutate(int_text = paste(abbr, "\n", round(st_popM,2))) 
+st_lpop_int <- statepop_map  |>           
+    ggplot(aes(x=long, y=lat, group=group, fill=st_popM)) +
+    geom_polygon(aes(text=int_text), color="darkgrey") +
+    #geom_line(aes(text=abbr, size=st_popM*1000000),
+    #          show.legend=F, alpha = 0.01) +
+    theme_map() +
+    coord_map("albers", lat0 = 39, lat1 = 45) +
+    scale_fill_continuous(type = "viridis", trans="log",
+                          breaks=c(0,1,2,3,5,10,20,35)) +
+    theme(legend.position = "bottom",
+          legend.key.width = unit(1, "cm"),
+          legend.background = element_rect(colour = "lightgrey", fill=NA, size=0.5),
+          panel.border = element_rect(colour = "lightgrey", fill=NA, size=2)) +
+    geom_shadowtext(aes(x=m_long, y=m_lat, label=abbr),
+                    color="white", check_overlap = T,
+                    show.legend = F, size=2) + 
+    labs(fill= "Pop. in Millions", title="Population by State",
+         subtitle="Unit is 1 Million People - Log Transformed",
+         caption= "Not Shown: HI: 1.42 Million   AK: 0.74 Million
+         Data Source: https://CRAN.R-project.org/package=usdata")
+
+st_lpop_int <- ggplotly(st_lpop_int, 
+                           tooltip = "text") # interactive component
+
+
+```
+
+---
+
+Interactive State Map (draft format)
+
+ggplotly removes projection and other map elements
+
+```{r us state interactive map, echo=F, fig.dim=c(10,7), fig.align='center'}
+
+st_lpop_int
+
+```
+
+---
+
+### To log or not to log
+
+In this class, we visualize data using `ggplot` (and now `ggplotly`), `hchart`, `dygraph`
+
+If you want to explore (not present), you can use base graphics
+
+- Base graphics could also be used to make polished vizualizations but the code is much longer and more tedious than `ggplot`
+
+
+```{r base graphics plots, fig.dim=c(4, 6), fig.align='center'}
+
+par(mfrow=c(2,1)) # stacks base graph plots
+hist(statepop_map$st_popM, main="")
+hist(log(statepop_map$st_popM), main="")
+par(mfrow=c(1,1)) # resets base graph options
+
+```
+
+
+---
+
+### Filtering a Map to a Region
+
+- Map techniques above can also be used for a region
+- Demo that follows uses an education dataset with data filtered to 10 Northeastern states
+
+```{r import modify filter education data}
+
+edu <- read_csv("education by state.csv", skip=3, show_col_types = F, # import data
+                col_names = c("state", "pop_over_25", "pop_hs", "pct_hs",
+                              "pop_bachelor", "pct_bachelor", 
+                              "pop_advanced","pct_advanced")) 
+edu1 <- edu |>
+  select(state, pop_bachelor, pct_bachelor) |>
+  mutate(state = str_trim(state) |> tolower(),
+         pop_bachelor1K = pop_bachelor/1000,
+         pct_bachelor = gsub("%","", pct_bachelor, fixed = T) |> as.numeric()) |> 
+  filter(state %in% c("maine", "massachusetts", "connecticut" , "rhode island",
+                      "vermont", "new hampshire", "new york", "new jersey", "pennsylvania",
+                      "delaware")) |> glimpse()
+
+```
+
+---
+
+### Exploratory Bachelor Degree Data  Plots (Base-R) 
+
+```{r base R scatterplot and histogram, fig.dim=c(12,7), fig.align='center'}
+
+par(mfrow=c(1,2))
+hist(edu1$pop_bachelor1K, main="")
+plot(edu1$pop_bachelor1K, edu1$pct_bachelor, main="")
+par(mfrow=c(1,1))
+
+```
+
+---
+
+#### Week 12 In-class Exercises
+  
+***TurningPoint Session ID: bua455s22***
+
+#### TP Question 1 (L20)
+  
+What exploratory plot command (base R code shown) is good for checking if the variable you want to plot is right skewed and might need to be log transformed?
+
+
+#### TP Question 2 (L20)
+  
+Based on the histogram for the northeastern area of the U.S, which includes only 10 states, do these data appear skewed?
+
+---
+
+### Add Education Data to Map Data
+
+In the chunk below we start from scratch with state data.
+This chunk does not depend on the data being imported and managed in a previous chunk.
+
+```{r join edu data with state map and state abbr data}
+
+us_states <- map_data("state") |>    # state polygons (from R)
+  select(long:region) |> rename("state" = "region")
+state_abbr <- state_stats |>         # state abbreviations 
+  select(state, abbr) |> mutate(state = tolower(state))
+
+edu1 <- left_join(edu1, state_abbr)      # left join to maintain filter to NE states
+edu_NE_map <- left_join(edu1, us_states) # left join to maintain filter to NE states
+state_coords <- read_csv("state_coords.csv", show_col_types = F,       # add in state midpoints (centroids)
+                         col_names = c("state", "m_lat", "m_long")) |>
+  mutate(state = gsub(", USA", "", state, fixed=T),
+         state = gsub(", the USA", "", state, fixed=T),
+         state = gsub(", the US", "", state, fixed=T),
+         state = tolower(state))
+edu_NE_map <- left_join(edu_NE_map, state_coords)  # left join to maintain filter to NE states
+
+```
+
+
+---
+
+### Code for Regional Map 1 - Population with Bachelor's Degree
+  
+[Data Source - Wikipedia](https://en.wikipedia.org/wiki/List_of_U.S._states_and_territories_by_educational_attainment)
+
+```{r NE edu map pop}
+
+ne_edu_pop <- edu_NE_map |>         
+  ggplot(aes(x=long, y=lat, group=group, fill=pop_bachelor1K)) +   # pop in 1000s
+  geom_polygon(color="darkgrey") +
+  theme_map() +
+  coord_map("albers", lat0 = 39, lat1 = 45) +
+  scale_fill_continuous(type = "viridis", trans="log",             # log transformation
+                        breaks = c(100, 500, 1000, 5000))+
+  theme(legend.position = "bottom",
+        legend.key.width = unit(1, "cm")) +
+  geom_shadowtext(aes(x=m_long, y=m_lat, label=abbr),
+                  color="white", check_overlap = T, show.legend = F, size=3) + 
+  labs(fill= "Unit: 1000 People", 
+       title="NE States: Pop. with a Bachelor's Degree",)
+```
+
+---
+
+### Code for Regional Map 2 - Percentage of People with Bachelor's Degree
+  
+[Data Source - Wikipedia](https://en.wikipedia.org/wiki/List_of_U.S._states_and_territories_by_educational_attainment)
+
+```{r NE edu map pct}
+
+ne_edu_pct <- edu_NE_map |>
+  ggplot(aes(x=long, y=lat, group=group, fill=pct_bachelor)) +        # percent data
+  geom_polygon(color="darkgrey") +
+  theme_map() +
+  coord_map("albers", lat0 = 39, lat1 = 45) +
+  scale_fill_continuous(type = "viridis",                             # no transformation needed
+                        breaks = c(32, 34, 36, 38, 40, 42, 44)) +
+  theme(legend.position = "bottom",
+        legend.key.width = unit(1, "cm")) +
+  geom_shadowtext(aes(x=m_long, y=m_lat, label=abbr),
+                  color="white", check_overlap = T, show.legend = F, size=3) + 
+  labs(fill= "Unit: %", title="NE States: Percent with a Bachelor's Degree")
+
+```
+
+---
+
+### Displaying Population and Percentage with Bachelors Degree side by side
+
+```{r display of NE pop and pct maps, fig.dim=c(15,7), fig.align='center'}
+
+grid.arrange(ne_edu_pop, ne_edu_pct, ncol=2)
+grid.rect(width = .98, height = .98, gp = gpar(lwd = 2, col = "darkgrey", fill = NA))
+
+```
+
+---
+
+### Rpubs Exercise
+
+#### **RPubs** (Review from Tuesday)
 
 - If you want to publish your dashboard or any HTML file you create in R, you can do so for free.  
 
@@ -382,6 +774,70 @@ Students will create this map or static one by adapting Asia Map code (projectio
   
     - In previous semesters, some students have saved their final dashboard online and linked it to their resumes and LinkedIn profiles.
     
+---
+
+### Lecture 20 In-class Exercise 
+  
+**`1.`** Open your HW 5 - Part 1.Rmd file and knit it to create your dashboard. 
+
+- Make sure this file has your name in the header.
+
+- It is okay if you haven't revised it yet for HW 5 - Part 2 
+   
+  - Rminder HW 5 - Part 2 is due tomorrow.
+  
+  - If you don't have HW 5 - Part 1 done, you can use your html file from another HW Assignment, e.g. HW 4.
+   
+**`2.`** Click the Rpubs icon, create a free account, and publish your html file.
+
+- If RStudio asks to install additional packages to complete the publishing process, click `Yes`.
+
+**`3.`** Submit the link to your published file on Blackboard.
+
+**`4.`** A Link to your published file must be submitted by Friday 11/17/22 at midnight to count for class participation today.
+
+---
+
+### Next Week:
+
+#### Additional Topics
+
+- Ask me questions about your project (Others may benefit)
+
+- I have topics including
+
+  - Managing a consulting project from begining to end
+  
+  - formatting complex tables using the `gt` package
+
+- Time permitting, I will also demo 
+
+  - knitting R Markdown to different formats: word, powerpoint, etc.
+  
+  - Next Gen. RStudio publishing using Quarto 
+  
+    - files are .qmd instead of .Rmd and rendering appears to be streamlined
+  
+---
+
+### Next Week:
+
+#### Review of Skillset Terminology
+
+Now that you are (almost) done with BUA 455 and more so, when you graduate you have a very useful set of skills
+
+- We talked about these skills in October because I had a couple questions from students preparing for internship interviews.
+
+- Explaining these skills to others is a challenge
+
+- I will spend a little time talking about how to explain those skills to other people
+
+- Preview: It took me decades to figure out how to talk about what I do.
+
+  - Increased interest in Data Science and Analytics has resulted in better terminology
+  
+  - [White Paper from DataCamp provides an excellent blueprint](https://drive.google.com/file/d/1_VoM3D6tPftjZpXCnTL8SKYBlOM_4KjG/view?usp=sharing)
+  
 ---
 
 
